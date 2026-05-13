@@ -95,7 +95,7 @@ async def upload_document(file: UploadFile = File(...)):
         for i, chunk in enumerate(chunks):
             logger.info(f"  Chunk {i + 1}/{len(chunks)}")
 
-            # Extract entities + relationships via GPT-4o
+            # Extract entities + relationships via LLM
             extracted = extract_entities_and_relationships(chunk)
             entities = extracted.get("entities", [])
             relationships = extracted.get("relationships", [])

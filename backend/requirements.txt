@@ -7,9 +7,8 @@ python-multipart==0.0.9
 pydantic==2.7.4
 pydantic-settings==2.3.4
 
-# ── OpenAI (GPT-4o + Embeddings) ────────────────────────────────────────────────
-openai==1.35.7
-tiktoken==0.7.0
+# ── Google Gemini (LLM + Embeddings) ────────────────────────────────────────────
+google-generativeai==0.7.2
 
 # ── Neo4j Graph Database ─────────────────────────────────────────────────────────
 neo4j==5.21.0

@@ -13,11 +13,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ── OpenAI ──────────────────────────────────────────────────────────────────
-    openai_api_key: str
-    openai_chat_model: str = "gpt-4o"
-    openai_embedding_model: str = "text-embedding-3-small"
-    openai_embedding_dimensions: int = 1536
+    # ── Google Gemini ────────────────────────────────────────────────────────────
+    gemini_api_key: str
+    gemini_chat_model: str = "gemini-1.5-flash"
+    gemini_embedding_model: str = "models/text-embedding-004"
+    embedding_dimensions: int = 768   # text-embedding-004 produces 768-dim vectors
 
     # ── Neo4j ───────────────────────────────────────────────────────────────────
     neo4j_uri: str = "bolt://localhost:7687"

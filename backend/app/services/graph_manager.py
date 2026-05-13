@@ -77,7 +77,7 @@ class GraphManager:
                 FOR (e:Entity) ON (e.embedding)
                 OPTIONS {{
                     indexConfig: {{
-                        `vector.dimensions`: {settings.openai_embedding_dimensions},
+                        `vector.dimensions`: {settings.embedding_dimensions},
                         `vector.similarity_function`: 'cosine'
                     }}
                 }}

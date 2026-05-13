@@ -76,7 +76,7 @@ export default function FileUpload({ onUploadComplete }) {
         {uploadState === "uploading" ? (
           <>
             <span className="dropzone-icon">⚙️</span>
-            <p className="dropzone-text">Processing document with GPT-4o...</p>
+            <p className="dropzone-text">Processing document...</p>
             <p className="dropzone-subtext">Extracting entities &amp; building graph</p>
             <div className="upload-progress">
               <div className="progress-bar-track">

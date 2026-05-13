@@ -2,15 +2,15 @@
 RAG Pipeline — the core intelligence of the system.
 
 Query flow:
-  1. Embed the user's question with text-embedding-3-small
+  1. Embed the user's question via Gemini text-embedding-004
   2. Vector similarity search → top-k semantically relevant entity nodes
   3. Expand a 2-hop subgraph around those seed nodes
   4. Format the subgraph as a structured context string
-  5. Call GPT-4o with the context to generate a grounded answer
+  5. Gemini generates a natural language answer grounded in the context
   6. Return { answer, subgraph } to the API router
 """
 import logging
-from openai import OpenAI
+import google.generativeai as genai
 
 from app.config import get_settings
 from app.services.graph_manager import graph_manager
@@ -40,15 +40,16 @@ Tone: Professional, clinical, informative — like a medical research brief.
 
 
 def embed_text(text: str) -> list[float]:
-    """Generate an embedding vector for the given text using OpenAI."""
+    """Generate an embedding vector for the given text using Gemini text-embedding-004."""
     settings = get_settings()
-    client = OpenAI(api_key=settings.openai_api_key)
+    genai.configure(api_key=settings.gemini_api_key)
 
-    response = client.embeddings.create(
-        model=settings.openai_embedding_model,
-        input=text[:8000],  # Embedding model token limit guard
+    result = genai.embed_content(
+        model=settings.gemini_embedding_model,
+        content=text[:8000],   # guard against very long inputs
+        task_type="retrieval_query",
     )
-    return response.data[0].embedding
+    return result["embedding"]
 
 
 def _format_graph_context(nodes: list[dict], links: list[dict]) -> str:
@@ -76,7 +77,6 @@ def _format_graph_context(nodes: list[dict], links: list[dict]) -> str:
 
     # Relationship section
     if links:
-        # Build a lookup for node ID → name
         id_to_name = {n["id"]: n["name"] for n in nodes}
         lines.append("\n── RELATIONSHIPS ──")
         for link in links:
@@ -99,7 +99,7 @@ def process_query(question: str) -> dict:
         }
     """
     settings = get_settings()
-    client = OpenAI(api_key=settings.openai_api_key)
+    genai.configure(api_key=settings.gemini_api_key)
 
     # ── Step 1: Embed the question ─────────────────────────────────────────────
     logger.info(f"Processing query: {question[:100]}...")
@@ -120,24 +120,27 @@ def process_query(question: str) -> dict:
     # ── Step 4: Format context ─────────────────────────────────────────────────
     context = _format_graph_context(nodes, links)
 
-    # ── Step 5: Generate answer with GPT-4o ───────────────────────────────────
+    # ── Step 5: Generate answer ────────────────────────────────────────────────
+    model = genai.GenerativeModel(
+        model_name=settings.gemini_chat_model,
+        system_instruction=QA_SYSTEM_PROMPT,
+    )
+
     user_message = f"""Question: {question}
 
 {context}
 
 Please answer the question based on the knowledge graph context above."""
 
-    response = client.chat.completions.create(
-        model=settings.openai_chat_model,
-        messages=[
-            {"role": "system", "content": QA_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.3,
-        max_tokens=1500,
+    response = model.generate_content(
+        user_message,
+        generation_config=genai.GenerationConfig(
+            temperature=0.3,
+            max_output_tokens=1500,
+        ),
     )
 
-    answer = response.choices[0].message.content.strip()
+    answer = response.text.strip()
     sources = [e["name"] for e in similar_entities]
 
     logger.info("Answer generated successfully.")

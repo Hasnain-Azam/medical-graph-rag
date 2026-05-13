@@ -1,6 +1,6 @@
 """
-Entity Extractor — uses GPT-4o with structured JSON output to extract
-medical entities and their relationships from text chunks.
+Entity Extractor — uses Gemini to extract medical entities and their
+relationships from text chunks, returning structured JSON.
 
 Entity types: Disease, Drug, Gene, Symptom, TreatmentProtocol, BloodTest
 Relationship types: TREATS, CAUSES, INHIBITS, ASSOCIATED_WITH,
@@ -9,7 +9,7 @@ Relationship types: TREATS, CAUSES, INHIBITS, ASSOCIATED_WITH,
 import hashlib
 import json
 import logging
-from openai import OpenAI
+import google.generativeai as genai
 
 from app.config import get_settings
 
@@ -83,7 +83,7 @@ def make_entity_id(name: str, entity_type: str) -> str:
 
 def extract_entities_and_relationships(text_chunk: str) -> dict:
     """
-    Call GPT-4o on a text chunk and return structured entity/relationship data.
+    Call Gemini on a text chunk and return structured entity/relationship data.
 
     Returns:
         {
@@ -92,31 +92,32 @@ def extract_entities_and_relationships(text_chunk: str) -> dict:
         }
     """
     settings = get_settings()
-    client = OpenAI(api_key=settings.openai_api_key)
+    genai.configure(api_key=settings.gemini_api_key)
+
+    model = genai.GenerativeModel(
+        model_name=settings.gemini_chat_model,
+        system_instruction=SYSTEM_PROMPT,
+    )
+
+    prompt = f"Extract medical entities and relationships from this text:\n\n{text_chunk}"
 
     try:
-        response = client.chat.completions.create(
-            model=settings.openai_chat_model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Extract medical entities and relationships from this text:\n\n{text_chunk}",
-                },
-            ],
-            response_format={"type": "json_object"},
-            temperature=0,
-            max_tokens=4096,
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0,
+                max_output_tokens=4096,
+            ),
         )
-
-        raw = response.choices[0].message.content
+        raw = response.text.strip()
         data = json.loads(raw)
 
     except json.JSONDecodeError as e:
-        logger.error(f"GPT-4o returned invalid JSON: {e}")
+        logger.error(f"Model returned invalid JSON: {e}")
         return {"entities": [], "relationships": []}
     except Exception as e:
-        logger.error(f"OpenAI API call failed: {e}")
+        logger.error(f"Gemini API call failed: {e}")
         return {"entities": [], "relationships": []}
 
     # ── Normalize entities — add deterministic IDs ─────────────────────────────

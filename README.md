@@ -3,7 +3,7 @@
 A production-ready **GraphRAG** application that transforms medical documents into an
 interactive knowledge graph, enabling natural-language Q&A with visual subgraph retrieval.
 
-Built with **FastAPI · Neo4j · GPT-4o · React · react-force-graph-2d**.
+Built with **FastAPI · Neo4j · Gemini · React · react-force-graph-2d**.
 
 ---
 
@@ -15,9 +15,9 @@ User uploads PDF/TXT
       ▼
 FastAPI Backend
   ├─ document_processor  →  Extract + chunk text
-  ├─ entity_extractor    →  GPT-4o extracts entities & relationships (JSON)
+  ├─ entity_extractor    →  LLM extracts entities & relationships (structured JSON)
   ├─ graph_manager       →  Store in Neo4j + vector embeddings
-  └─ rag_pipeline        →  Embed question → vector search → subgraph → GPT-4o answer
+  └─ rag_pipeline        →  Embed question → vector search → subgraph → LLM answer
       │
       ▼
 Neo4j Knowledge Graph
@@ -49,9 +49,9 @@ React Frontend
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.12, FastAPI, Uvicorn |
-| LLM | OpenAI GPT-4o |
-| Embeddings | OpenAI text-embedding-3-small (1536-dim) |
-| Graph DB | Neo4j 5.19 (vector index native) |
+| LLM | Google Gemini 1.5 Flash |
+| Embeddings | Gemini text-embedding-004 (768-dim) |
+| Graph DB | Neo4j 5.19 (native vector index) |
 | Frontend | React 18, Vite 5 |
 | Graph Viz | react-force-graph-2d |
 | DevOps | Docker, Docker Compose |
@@ -63,7 +63,7 @@ React Frontend
 - **Docker Desktop** (running) → [Install](https://docs.docker.com/get-docker/)
 - **Node.js 18+** → `node --version`
 - **Python 3.12** → `python --version`
-- **OpenAI API Key** → [Get one](https://platform.openai.com/api-keys)
+- **Gemini API Key** (free) → [Get one at Google AI Studio](https://aistudio.google.com/app/apikey)
 
 ---
 
@@ -80,7 +80,7 @@ cd medical-graph-rag
 
 ```bash
 cp backend/.env.example backend/.env
-# Open backend/.env and paste your OpenAI API key
+# Open backend/.env and paste your Gemini API key
 ```
 
 ### 3. Start Neo4j + Backend (Docker)
@@ -127,7 +127,7 @@ docker run -p 7474:7474 -p 7687:7687 \
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env    # fill in your OPENAI_API_KEY
+cp .env.example .env    # fill in your GEMINI_API_KEY
 uvicorn app.main:app --reload --port 8000
 
 # Frontend
@@ -156,14 +156,14 @@ medical-graph-rag/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py               ← FastAPI app entrypoint
-│   │   ├── config.py             ← Pydantic settings
+│   │   ├── config.py             ← Settings (reads .env)
 │   │   ├── models.py             ← Request/response schemas
 │   │   ├── routers/
 │   │   │   ├── upload.py         ← POST /api/upload
 │   │   │   └── query.py          ← POST /api/query, GET /api/graph
 │   │   └── services/
 │   │       ├── document_processor.py  ← PDF/TXT → chunks
-│   │       ├── entity_extractor.py    ← GPT-4o entity extraction
+│   │       ├── entity_extractor.py    ← LLM entity extraction
 │   │       ├── graph_manager.py       ← Neo4j driver + vector search
 │   │       └── rag_pipeline.py        ← Full GraphRAG pipeline
 │   ├── data/samples/             ← Demo medical dataset
@@ -177,7 +177,7 @@ medical-graph-rag/
 │   │   │   ├── ChatInterface.jsx ← Chat Q&A
 │   │   │   ├── GraphVisualization.jsx ← Force graph
 │   │   │   └── StatusBar.jsx     ← Top nav
-│   │   └── services/api.js       ← Axios API client
+│   │   └── services/api.js       ← API client
 │   ├── vite.config.js
 │   └── package.json
 ├── docker-compose.yml
@@ -189,4 +189,4 @@ medical-graph-rag/
 
 ## License
 
-MIT — feel free to use this as a portfolio project or starting point for medical AI applications.
+MIT
