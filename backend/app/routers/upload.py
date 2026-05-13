@@ -10,6 +10,7 @@ POST /api/upload
 import logging
 import os
 import tempfile
+import time
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 
@@ -104,7 +105,8 @@ async def upload_document(file: UploadFile = File(...)):
             for entity in entities:
                 try:
                     embedding = embed_text(
-                        f"{entity['name']} {entity['description']}"
+                        f"{entity['name']} {entity['description']}",
+                        task="RETRIEVAL_DOCUMENT",
                     )
                     graph_manager.upsert_entity_simple(entity, embedding)
                 except Exception as e:
@@ -125,6 +127,10 @@ async def upload_document(file: UploadFile = File(...)):
             total_entities += len(entities)
             total_relationships += len(relationships)
             chunks_processed += 1
+
+            # Respect free-tier rate limit: 15 RPM = 1 request per 4s
+            if i < len(chunks) - 1:
+                time.sleep(4)
 
     finally:
         # Always clean up the temp file

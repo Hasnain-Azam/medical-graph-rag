@@ -32,4 +32,4 @@ USER appuser
 EXPOSE 8000
 
 # Uvicorn with 2 workers — appropriate for a single-container deployment
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--log-level", "info"]

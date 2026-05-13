@@ -1,81 +1,97 @@
 """
-RAG Pipeline — the core intelligence of the system.
+RAG Pipeline — GraphRAG query flow using Gemini REST API directly.
 
-Query flow:
-  1. Embed the user's question via Gemini text-embedding-004
-  2. Vector similarity search → top-k semantically relevant entity nodes
-  3. Expand a 2-hop subgraph around those seed nodes
-  4. Format the subgraph as a structured context string
-  5. Gemini generates a natural language answer grounded in the context
-  6. Return { answer, subgraph } to the API router
+1. Embed question  →  gemini-embedding-001 REST endpoint
+2. Vector search   →  Neo4j vector index
+3. Expand subgraph →  2-hop expansion
+4. Format context  →  structured text
+5. Generate answer →  Gemini generateContent REST endpoint
 """
 import logging
-import google.generativeai as genai
+import httpx
 
 from app.config import get_settings
 from app.services.graph_manager import graph_manager
 
 logger = logging.getLogger(__name__)
 
-
-# ── Answer Generation Prompt ──────────────────────────────────────────────────────
 QA_SYSTEM_PROMPT = """You are an expert medical research assistant with deep knowledge
 of clinical medicine, pharmacology, genetics, and diagnostic medicine.
 
-You will be given:
-1. A user question about medical topics.
-2. A KNOWLEDGE GRAPH CONTEXT extracted from uploaded medical documents.
+You will be given a user question and a KNOWLEDGE GRAPH CONTEXT from uploaded medical documents.
 
-Your task:
-- Answer the question accurately and concisely based on the knowledge graph context.
-- Structure your answer clearly using paragraphs. Use bullet points where appropriate.
-- If the context mentions specific drugs, genes, symptoms, or treatment protocols, reference them explicitly.
-- If the context is insufficient to fully answer the question, acknowledge that and provide
-  what information you do have.
-- Do NOT hallucinate information not present in the context.
-- End with a brief "Key Entities" summary listing the most relevant entities from the graph.
-
-Tone: Professional, clinical, informative — like a medical research brief.
-"""
+Answer the question accurately based on the context. Use bullet points where helpful.
+Reference specific drugs, genes, symptoms, and protocols mentioned in the context.
+End with a "Key Entities" summary of the most relevant graph nodes.
+Do NOT hallucinate information not in the context.
+Tone: professional and clinical."""
 
 
-def embed_text(text: str) -> list[float]:
-    """Generate an embedding vector for the given text using Gemini text-embedding-004."""
+def embed_text(text: str, task: str = "RETRIEVAL_QUERY") -> list[float]:
+    """Embed text using Gemini embedding REST API. Returns a list of floats."""
     settings = get_settings()
-    genai.configure(api_key=settings.gemini_api_key)
-
-    result = genai.embed_content(
-        model=settings.gemini_embedding_model,
-        content=text[:8000],   # guard against very long inputs
-        task_type="retrieval_query",
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.gemini_embedding_model}:embedContent"
+        f"?key={settings.gemini_api_key}"
     )
-    return result["embedding"]
+    payload = {
+        "model": f"models/{settings.gemini_embedding_model}",
+        "content": {"parts": [{"text": text[:8000]}]},
+        "taskType": task,
+    }
+
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(url, json=payload)
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Embed API error {resp.status_code}: {resp.text[:200]}")
+
+    return resp.json()["embedding"]["values"]
+
+
+def _call_gemini_chat(message: str, system: str, settings) -> str:
+    """Direct REST call to Gemini generateContent."""
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.gemini_chat_model}:generateContent"
+        f"?key={settings.gemini_api_key}"
+    )
+    payload = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": message}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1500},
+    }
+
+    with httpx.Client(timeout=120) as client:
+        resp = client.post(url, json=payload)
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Chat API error {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    text = ""
+    for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []):
+        if not part.get("thought", False) and part.get("text"):
+            text += part["text"]
+    return text.strip()
 
 
 def _format_graph_context(nodes: list[dict], links: list[dict]) -> str:
-    """
-    Convert subgraph data into a readable text context for the LLM.
-    Groups entities by type for clarity.
-    """
     if not nodes:
         return "No relevant entities found in the knowledge graph."
 
-    # Group nodes by type
     by_type: dict[str, list[dict]] = {}
     for node in nodes:
         by_type.setdefault(node["type"], []).append(node)
 
-    lines = ["=== KNOWLEDGE GRAPH CONTEXT ===\n"]
-
-    # Entity section
-    lines.append("── ENTITIES ──")
+    lines = ["=== KNOWLEDGE GRAPH CONTEXT ===\n", "── ENTITIES ──"]
     for entity_type, type_nodes in sorted(by_type.items()):
         lines.append(f"\n[{entity_type}]")
         for n in type_nodes:
             desc = f" — {n['description']}" if n.get("description") else ""
             lines.append(f"  • {n['name']}{desc}")
 
-    # Relationship section
     if links:
         id_to_name = {n["id"]: n["name"] for n in nodes}
         lines.append("\n── RELATIONSHIPS ──")
@@ -88,65 +104,35 @@ def _format_graph_context(nodes: list[dict], links: list[dict]) -> str:
 
 
 def process_query(question: str) -> dict:
-    """
-    Full GraphRAG pipeline for a single user question.
-
-    Returns:
-        {
-            "answer":   str,
-            "subgraph": {"nodes": [...], "links": [...]}
-            "sources":  [entity names used as context]
-        }
-    """
+    """Full GraphRAG pipeline for a user question."""
     settings = get_settings()
-    genai.configure(api_key=settings.gemini_api_key)
 
-    # ── Step 1: Embed the question ─────────────────────────────────────────────
     logger.info(f"Processing query: {question[:100]}...")
-    query_embedding = embed_text(question)
 
-    # ── Step 2: Vector similarity search ──────────────────────────────────────
+    # 1. Embed question
+    query_embedding = embed_text(question, task="RETRIEVAL_QUERY")
+
+    # 2. Vector similarity search
     similar_entities = graph_manager.vector_similarity_search(
         query_embedding, top_k=settings.vector_top_k
     )
-    logger.info(f"Found {len(similar_entities)} similar entities via vector search.")
-
+    logger.info(f"Found {len(similar_entities)} similar entities.")
     seed_ids = [e["id"] for e in similar_entities]
 
-    # ── Step 3: Expand subgraph ────────────────────────────────────────────────
+    # 3. Expand subgraph
     nodes, links = graph_manager.expand_subgraph(seed_ids, hops=settings.subgraph_hops)
-    logger.info(f"Subgraph expanded: {len(nodes)} nodes, {len(links)} relationships.")
+    logger.info(f"Subgraph: {len(nodes)} nodes, {len(links)} relationships.")
 
-    # ── Step 4: Format context ─────────────────────────────────────────────────
+    # 4. Format context
     context = _format_graph_context(nodes, links)
 
-    # ── Step 5: Generate answer ────────────────────────────────────────────────
-    model = genai.GenerativeModel(
-        model_name=settings.gemini_chat_model,
-        system_instruction=QA_SYSTEM_PROMPT,
-    )
+    # 5. Generate answer
+    user_message = f"Question: {question}\n\n{context}\n\nAnswer based on the knowledge graph above."
+    answer = _call_gemini_chat(user_message, QA_SYSTEM_PROMPT, settings)
 
-    user_message = f"""Question: {question}
-
-{context}
-
-Please answer the question based on the knowledge graph context above."""
-
-    response = model.generate_content(
-        user_message,
-        generation_config=genai.GenerationConfig(
-            temperature=0.3,
-            max_output_tokens=1500,
-        ),
-    )
-
-    answer = response.text.strip()
-    sources = [e["name"] for e in similar_entities]
-
-    logger.info("Answer generated successfully.")
-
+    logger.info("Answer generated.")
     return {
         "answer": answer,
         "subgraph": {"nodes": nodes, "links": links},
-        "sources": sources,
+        "sources": [e["name"] for e in similar_entities],
     }
