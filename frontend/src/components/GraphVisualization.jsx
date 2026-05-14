@@ -139,21 +139,55 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
     const dist = Math.hypot(dx, dy);
     if (dist === 0) return;
 
-    // Draw line
+    // Unit vector along the link
+    const ux = dx / dist;
+    const uy = dy / dist;
+
+    // Pull line endpoints back to the node's visible edge so the
+    // shaft and arrowhead are never buried under the circles.
+    const srcR = getNodeRadius(start) + 1;
+    const tgtR = getNodeRadius(end)   + 1;
+
+    const x1 = start.x + ux * srcR;
+    const y1 = start.y + uy * srcR;
+    const x2 = end.x   - ux * tgtR;
+    const y2 = end.y   - uy * tgtR;
+
+    // Arrow head size (scales with zoom so it's always legible)
+    const arrowLen   = Math.max(3, 6 / globalScale);
+    const arrowAngle = Math.PI / 6;   // 30°
+
+    // Shaft
     ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
-    ctx.lineWidth = 0.8;
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.55)";
+    ctx.lineWidth = Math.max(0.6, 1.2 / globalScale);
     ctx.stroke();
 
-    // Relationship label at midpoint — only when zoomed in
+    // Arrowhead (filled triangle at the target end)
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(
+      x2 - arrowLen * Math.cos(angle - arrowAngle),
+      y2 - arrowLen * Math.sin(angle - arrowAngle)
+    );
+    ctx.lineTo(
+      x2 - arrowLen * Math.cos(angle + arrowAngle),
+      y2 - arrowLen * Math.sin(angle + arrowAngle)
+    );
+    ctx.closePath();
+    ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
+    ctx.fill();
+
+    // Relationship label at midpoint — only when zoomed in enough
     if (globalScale > 1.8 && link.type) {
-      const mx = (start.x + end.x) / 2;
-      const my = (start.y + end.y) / 2;
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
       const fontSize = Math.min(8 / globalScale, 3);
       ctx.font = `${fontSize}px Inter, sans-serif`;
-      ctx.fillStyle = "rgba(100, 116, 139, 0.9)";
+      ctx.fillStyle = "rgba(148, 163, 184, 0.9)";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(link.type, mx, my);
@@ -253,9 +287,7 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
             // Link rendering
             linkCanvasObject={paintLink}
             linkCanvasObjectMode={() => "replace"}
-            linkDirectionalArrowLength={4}
-            linkDirectionalArrowRelPos={1}
-            linkDirectionalArrowColor={() => "rgba(148,163,184,0.4)"}
+            linkDirectionalArrowLength={0}
             // Physics
             d3AlphaDecay={0.02}
             d3VelocityDecay={0.3}
