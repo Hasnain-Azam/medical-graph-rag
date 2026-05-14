@@ -49,8 +49,8 @@ React Frontend
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.12, FastAPI, Uvicorn |
-| LLM | Google Gemini 1.5 Flash |
-| Embeddings | Gemini text-embedding-004 (768-dim) |
+| LLM | Google Gemini 2.5 Flash |
+| Embeddings | Gemini Embedding-001 (3072-dim) |
 | Graph DB | Neo4j 5.19 (native vector index) |
 | Frontend | React 18, Vite 5 |
 | Graph Viz | react-force-graph-2d |
