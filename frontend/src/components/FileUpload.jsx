@@ -2,7 +2,7 @@
  * FileUpload — drag-and-drop document ingestion component.
  * Accepts PDF and TXT files, shows upload progress, displays extraction stats.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { uploadDocument } from "../services/api";
 
@@ -13,6 +13,8 @@ export default function FileUpload({ onUploadComplete }) {
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef(null);
 
   const handleUpload = useCallback(
     async (file) => {
@@ -20,6 +22,13 @@ export default function FileUpload({ onUploadComplete }) {
       setProgress(0);
       setError(null);
       setResult(null);
+      setElapsed(0);
+
+      // Start elapsed-time ticker
+      const start = Date.now();
+      timerRef.current = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - start) / 1000));
+      }, 1000);
 
       try {
         const data = await uploadDocument(file, setProgress);
@@ -29,6 +38,8 @@ export default function FileUpload({ onUploadComplete }) {
       } catch (err) {
         setError(err.message);
         setUploadState("error");
+      } finally {
+        clearInterval(timerRef.current);
       }
     },
     [onUploadComplete]
@@ -76,8 +87,18 @@ export default function FileUpload({ onUploadComplete }) {
         {uploadState === "uploading" ? (
           <>
             <span className="dropzone-icon">⚙️</span>
-            <p className="dropzone-text">Processing document...</p>
-            <p className="dropzone-subtext">Extracting entities &amp; building graph</p>
+            <p className="dropzone-text">Processing document…</p>
+            <p className="dropzone-subtext">
+              Extracting entities &amp; building graph
+              {elapsed > 0 && (
+                <span style={{ marginLeft: 6, color: "var(--accent-cyan)" }}>
+                  ({elapsed}s)
+                </span>
+              )}
+            </p>
+            <p className="dropzone-subtext" style={{ opacity: 0.55, fontSize: "10px" }}>
+              This can take 2–5 minutes for larger files
+            </p>
             <div className="upload-progress">
               <div className="progress-bar-track">
                 <div

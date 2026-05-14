@@ -9,21 +9,30 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: "/api",
-  timeout: 120_000, // 2-minute timeout for LLM calls
+  timeout: 30_000, // 30s for quick calls (health, graph fetch, queries)
+  headers: { "Content-Type": "application/json" },
+});
+
+// Separate instance with a long timeout for document ingestion.
+// Uploading a file triggers LLM extraction + embeddings for every chunk,
+// which can take several minutes on a free-tier Gemini account.
+const uploadApi = axios.create({
+  baseURL: "/api",
+  timeout: 600_000, // 10-minute ceiling for large documents
   headers: { "Content-Type": "application/json" },
 });
 
 // ── Response / Error interceptors ────────────────────────────────────────────────
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const detail =
-      err.response?.data?.detail ||
-      err.message ||
-      "An unexpected error occurred.";
-    return Promise.reject(new Error(detail));
-  }
-);
+const errorInterceptor = (err) => {
+  const detail =
+    err.response?.data?.detail ||
+    err.message ||
+    "An unexpected error occurred.";
+  return Promise.reject(new Error(detail));
+};
+
+api.interceptors.response.use((res) => res, errorInterceptor);
+uploadApi.interceptors.response.use((res) => res, errorInterceptor);
 
 // ── API Functions ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +46,7 @@ export async function uploadDocument(file, onProgress) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await api.post("/upload", formData, {
+  const response = await uploadApi.post("/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
     onUploadProgress: (e) => {
       if (e.total && onProgress) {
