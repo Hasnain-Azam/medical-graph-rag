@@ -46,6 +46,7 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const [tooltip, setTooltip] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [fgData, setFgData] = useState({ nodes: [], links: [] });
 
   // ── Resize observer ────────────────────────────────────────────────────────
@@ -159,12 +160,18 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
     }
   }, []);
 
+  // ── Track real mouse position inside the canvas container ────────────────
+  const handleMouseMove = useCallback((e) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
+  }, []);
+
   // ── Hover tooltip ─────────────────────────────────────────────────────────
-  const handleNodeHover = useCallback((node, prevNode) => {
+  const handleNodeHover = useCallback((node) => {
     if (node) {
       setTooltip({
-        x: node.x,
-        y: node.y,
         name: node.name,
         type: node.type,
         description: node.description || "",
@@ -208,7 +215,7 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
       </div>
 
       {/* Canvas Wrapper */}
-      <div className="graph-canvas-wrapper" ref={containerRef}>
+      <div className="graph-canvas-wrapper" ref={containerRef} onMouseMove={handleMouseMove}>
         {/* Empty State */}
         {isEmpty && !isLoading && (
           <div className="graph-empty">
@@ -260,27 +267,39 @@ export default function GraphVisualization({ graphData, mode, isLoading }) {
           />
         )}
 
-        {/* Node Tooltip */}
-        {tooltip && (
-          <div
-            className="graph-tooltip"
-            style={{
-              left: Math.min(tooltip.x + 15, dimensions.width - 260),
-              top:  Math.min(tooltip.y + 15, dimensions.height - 120),
-            }}
-          >
+        {/* Node Tooltip — positioned relative to real mouse coordinates */}
+        {tooltip && (() => {
+          const TOOLTIP_W = 260;
+          const TOOLTIP_H = 110;
+          const OFFSET    = 14;
+
+          // Flip left if too close to the right edge; flip up if too close to bottom
+          const left = mousePos.x + OFFSET + TOOLTIP_W > dimensions.width
+            ? mousePos.x - TOOLTIP_W - OFFSET
+            : mousePos.x + OFFSET;
+
+          const top = mousePos.y + OFFSET + TOOLTIP_H > dimensions.height
+            ? mousePos.y - TOOLTIP_H - OFFSET
+            : mousePos.y + OFFSET;
+
+          return (
             <div
-              className="tooltip-name"
-              style={{ borderLeft: `3px solid ${NODE_COLORS[tooltip.type] ?? NODE_COLORS.default}`, paddingLeft: 8 }}
+              className="graph-tooltip"
+              style={{ left: Math.max(4, left), top: Math.max(4, top) }}
             >
-              {tooltip.name}
+              <div
+                className="tooltip-name"
+                style={{ borderLeft: `3px solid ${NODE_COLORS[tooltip.type] ?? NODE_COLORS.default}`, paddingLeft: 8 }}
+              >
+                {tooltip.name}
+              </div>
+              <div className="tooltip-type">{tooltip.type}</div>
+              {tooltip.description && (
+                <div className="tooltip-desc">{tooltip.description}</div>
+              )}
             </div>
-            <div className="tooltip-type">{tooltip.type}</div>
-            {tooltip.description && (
-              <div className="tooltip-desc">{tooltip.description}</div>
-            )}
-          </div>
-        )}
+          );
+        })()}
 
         {/* Legend */}
         {!isEmpty && (
